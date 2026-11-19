@@ -55,8 +55,9 @@ function findDates(state, today) {
     return v ? { raw: m[0], iso: v, kind: 'absolute' } : null;
   }));
 
-  add(scan(state, /\b(\d{1,2})[\/.](\d{1,2})[\/.](\d{4}|\d{2})\b/g, (m) => {
-    const a = +m[1], b = +m[2]; let y = +m[3]; if (y < 100) y += 2000;
+  add(scan(state, /\b(\d{1,2})([\/.-])(\d{1,2})\2(\d{4}|\d{2})\b/g, (m) => {
+    if (m[2] === '-' && m[4].length !== 4) return null;
+    const a = +m[1], b = +m[3]; let y = +m[4]; if (y < 100) y += 2000;
     if (a > 12) { const v = iso(y, b, a); return v ? { raw: m[0], iso: v, kind: 'absolute' } : null; }
     if (b > 12) { const v = iso(y, a, b); return v ? { raw: m[0], iso: v, kind: 'absolute' } : null; }
     return { raw: m[0], iso: null, kind: 'ambiguous', note: 'dd/mm or mm/dd' };
@@ -65,6 +66,7 @@ function findDates(state, today) {
   const monthDay = new RegExp('\\b(' + MONTH_ALT + ')\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(\\d{4}))?\\b', 'gi');
   const dayMonth = new RegExp('\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?(' + MONTH_ALT + ')\\b\\.?(?:,?\\s+(\\d{4}))?', 'gi');
   const build = (mo, d, y) => {
+    if (mo.toLowerCase() === 'may' && mo[0] !== 'M') return null;
     const v = iso(y || yr, MONTHS[mo.toLowerCase()], +d);
     if (!v) return null;
     return { iso: v, kind: 'absolute', ...(y ? {} : { year_assumed: true }) };
@@ -73,14 +75,14 @@ function findDates(state, today) {
   add(scan(state, dayMonth, (m) => { const r = build(m[2], m[1], m[3] ? +m[3] : 0); return r ? { raw: m[0].trim(), ...r } : null; }));
 
   add(scan(state, new RegExp('\\b(' + MONTH_ALT + ')\\.?,?\\s+(\\d{4})\\b', 'gi'), (m) =>
-    ({ raw: m[0], iso: m[2] + '-' + pad(MONTHS[m[1].toLowerCase()]), kind: 'month' })));
+    (m[1].toLowerCase() === 'may' && m[1][0] !== 'M') ? null : ({ raw: m[0], iso: m[2] + '-' + pad(MONTHS[m[1].toLowerCase()]), kind: 'month' })));
 
-  const rel = new RegExp('\\b(today|tonight|tomorrow|yesterday|(?:next|this|coming)\\s+(?:' + WD_ALT + ')|' + WD_ALT + '|next week|next month|end of (?:the )?(?:month|week))\\b', 'gi');
+  const rel = new RegExp('\\b(today|tonight|tomorrow|tomorow|tmrw|tmr|2moro|yesterday|(?:next|this|coming)\\s+(?:' + WD_ALT + ')|' + WD_ALT + '|next week|next month|end of (?:the )?(?:month|week))\\b', 'gi');
   add(scan(state, rel, (m) => {
     const w = m[1].toLowerCase().replace(/\s+/g, ' ');
     let v;
     if (w === 'today' || w === 'tonight') v = today;
-    else if (w === 'tomorrow') v = addDays(today, 1);
+    else if (/^(tomorrow|tomorow|tmrw|tmr|2moro)$/.test(w)) v = addDays(today, 1);
     else if (w === 'yesterday') v = addDays(today, -1);
     else if (w === 'next week') v = addDays(today, 7);
     else if (w === 'next month') { const d = new Date(today + 'T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() + 1); v = d.toISOString().slice(0, 10); }
@@ -94,12 +96,20 @@ function findDates(state, today) {
     }
     return { raw: m[0], iso: v, kind: 'relative' };
   }));
+  add(scan(state, /\bthe\s+(\d{1,2})(?:st|nd|rd|th)\b/gi, (m) => {
+    const day = +m[1]; if (day < 1 || day > 31) return null;
+    let y = yr, mo = +today.slice(5, 7);
+    if (day < +today.slice(8, 10)) { mo += 1; if (mo > 12) { mo = 1; y += 1; } }
+    const v = iso(y, mo, day);
+    return v ? { raw: m[0], iso: v, kind: 'relative' } : null;
+  }));
   return strip(out);
 }
 
 // ---- main extraction ----
-const STOP_FIRST = new Set('The This That These Those Please Meeting Meet Call Email Send Dear Hi Hello Hey Thanks Thank Regards Best Also And But Or If When Then Next Last Our My Your We They Review Schedule Book Finish Submit Prepare Pay Buy Fix Update Deliver Complete Ask Confirm Order Draft Write Share Check Reply Remind Contact Dont Note Re Fwd Subject From To Cc Team Sincerely Kind Warm'.split(' '));
-const STOP_ANY = new Set([...WD.map((w) => w[0].toUpperCase() + w.slice(1)), ...Object.keys(MONTHS).map((w) => w[0].toUpperCase() + w.slice(1)), 'Inc', 'Ltd', 'LLC', 'Corp', 'Labs', 'Group', 'Limited', 'Technologies', 'Systems', 'Bank', 'University']);
+const STOP_FIRST = new Set('New Los San Las Santa Hong Saint The This That These Those Please Meeting Meet Call Email Send Dear Hi Hello Hey Thanks Thank Regards Best Also And But Or If When Then Next Last Our My Your We They Review Schedule Book Finish Submit Prepare Pay Buy Fix Update Deliver Complete Ask Confirm Order Draft Write Share Check Reply Remind Contact Dont Note Re Fwd Subject From To Cc Team Sincerely Kind Warm'.split(' '));
+const DETERMINERS = new Set(['The', 'This', 'That', 'These', 'Those', 'Our', 'My', 'Your', 'Their', 'His', 'Her', 'An']);
+const STOP_ANY = new Set(['Avenue', 'Street', 'Road', 'Close', 'Lane', 'Drive', 'Boulevard', 'Crescent', 'Estate', 'Island', 'City', 'State', 'Park', 'Square', 'Market', 'Airport', 'Hospital', 'Hotel', 'Plaza', 'Mall', ...WD.map((w) => w[0].toUpperCase() + w.slice(1)), ...Object.keys(MONTHS).map((w) => w[0].toUpperCase() + w.slice(1)), 'Inc', 'Ltd', 'LLC', 'Corp', 'Labs', 'Group', 'Limited', 'Technologies', 'Systems', 'Bank', 'University']);
 const ORG_SUFFIX = 'Inc|Ltd|LLC|Corp|Corporation|Co|Company|Labs|Group|GmbH|Limited|Technologies|Systems|Bank|Foundation|University|Agency|Studio|Partners';
 
 const CUR = { '$': 'USD', usd: 'USD', usdc: 'USDC', usdt: 'USDT', eur: 'EUR', gbp: 'GBP', ngn: 'NGN', dollar: 'USD', dollars: 'USD', naira: 'NGN', euro: 'EUR', euros: 'EUR' };
@@ -116,7 +126,11 @@ function toTime(m) {
 function splitSentences(text) {
   const P = '\u0001';
   let t = text.replace(/\b(Mr|Mrs|Ms|Dr|Prof|e\.g|i\.e|vs)\./g, '$1' + P);
-  t = t.replace(/\s+\d+[.)]\s+(?=[A-Z])/g, '\n').replace(/\s+[-*]\s+(?=[A-Z])/g, '\n');
+  const marks = [...t.matchAll(/(?:^|\s)(\d{1,2})[.)]\s+(?=[A-Z])/g)];
+  let expect = 1; const cuts = [];
+  for (const mk of marks) if (+mk[1] === expect) { cuts.push(mk); expect++; }
+  for (const mk of cuts.reverse()) t = t.slice(0, mk.index) + '\n' + t.slice(mk.index + mk[0].length);
+  t = t.replace(/\s+[-*]\s+(?=[A-Z])/g, '\n');
   return t.split(/(?<=[.!?])\s+(?=[A-Z0-9\[])|\n+/).map((s) => s.replace(new RegExp(P, 'g'), '.').trim()).filter(Boolean);
 }
 
@@ -127,14 +141,16 @@ const VERB_ANY = new RegExp('\\b(?:' + VERBS + ')\\b', 'i');
 
 function extractTasks(text, today) {
   const tasks = [];
-  for (const orig of splitSentences(text)) {
+  const clauseRe = new RegExp('\\s+(?:and|then|also)\\s+(?=(?:please\\s+)?(?:remind me to\\s+)?(?:' + VERBS + ')\\b)', 'i');
+  const parts = splitSentences(text).flatMap((x) => x.split(clauseRe));
+  for (const orig of parts) {
     const isChecklist = /^\s*(?:-\s*)?\[[ x]?\]/i.test(orig) || /^\s*(?:to-?do|action)\s*:/i.test(orig);
     const s = orig.replace(/^[A-Za-z ]{1,25}:\s+(?=\S)/, (m) => (isChecklist ? m : '')).trim();
     const nameTo = new RegExp('^@?[A-Z][a-z]+(?:\\s[A-Z][a-z]+)?\\s+to\\s+(?:' + VERBS + ')\\b');
     if (!(isChecklist || IMPERATIVE.test(s) || nameTo.test(s) || (TRIGGER.test(s) && VERB_ANY.test(s)))) continue;
     let ownerM = s.match(/^@?([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)\s+(?:will|should|needs? to|has to|must|to|shall|is going to)\b/)
       || s.match(/\b(?:assign(?:ed)? to|owner|responsible)\s*:?\s*@?([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)/i)
-      || s.match(/@(\w+)/);
+      || s.match(/(?<![\w.])@(\w+)/);
     let owner = ownerM ? ownerM[1] : null;
     if (owner && (STOP_FIRST.has(owner.split(' ')[0]) || /^(We|I|You|They|He|She|It)$/.test(owner))) owner = null;
     const dates = findDates({ t: s }, today);
@@ -157,6 +173,7 @@ function findNames(text) {
   const seq = /\b[A-Z][a-z'-]+(?:[ ][A-Z][a-z'-]+){1,2}\b/g;
   while ((m = seq.exec(cleaned))) {
     let w = m[0].split(' ');
+    if (DETERMINERS.has(w[0])) continue;
     while (w.length && STOP_FIRST.has(w[0])) w.shift();
     if (w.length < 2) continue;
     if (w.some((x) => STOP_ANY.has(x))) continue;
@@ -179,6 +196,7 @@ export function extract(rawText, today) {
     ...scan(state, /\b[A-Z]{2,5}-\d{2,}\b/g, (m) => m[0]),
     ...scan(state, /#\d{3,}\b/g, (m) => m[0]),
   ]);
+  scan(state, /\b\d{1,3}(?:\.\d{1,3}){3}\b/g, () => true);
   const dates = findDates(state, today);
   const times = strip(scan(state, /\b(?:(?:[01]?\d|2[0-3]):([0-5]\d)(?:\s?(am|pm))?|(?:1[0-2]|[1-9])\s?(am|pm))\b/gi, (m) => {
     const hm = m[0].match(/^(\d{1,2})(?::(\d{2}))?\s?(am|pm)?$/i);
@@ -199,12 +217,12 @@ export function extract(rawText, today) {
     (m) => ({ raw: m[0], value: parseFloat(m[1]), unit: m[2].toLowerCase() })));
   const phones = uniq(scan(state, /\+?\(?\d(?:[\s().-]{0,2}\d){7,14}/g, (m) => {
     const digits = m[0].replace(/\D/g, '');
-    const ok = digits.length >= 8 && digits.length <= 15 && (/^\+/.test(m[0]) || /[\s().-]/.test(m[0]) || (/^0/.test(m[0]) && digits.length >= 10));
+    const ok = digits.length >= 8 && digits.length <= 15 && (/^\+/.test(m[0]) || /[\s().-]/.test(m[0]) || (/^0/.test(m[0]) && digits.length === 11));
     return ok ? (/^\+/.test(m[0]) ? '+' : '') + digits : null;
   }));
 
   // organisations then people (on the blanked text)
-  const orgRe = new RegExp('\\b((?:[A-Z][\\w&\'-]*[ ]){1,3}(?:' + ORG_SUFFIX + ')\\b)', 'g');
+  const orgRe = new RegExp('\\b((?:(?:[A-Z][\\w\'-]*|&)[ ]){1,4}(?:' + ORG_SUFFIX + ')\\b)', 'g');
   const orgs = [];
   const forNames = state.t.replace(orgRe, (x) => {
     let w = x.split(' ');
@@ -252,7 +270,11 @@ export function run(raw, today) {
   if (!norm(raw).trim()) {
     return 'DataDistill received an empty order. Paste any messy text (notes, emails, messages, invoices) and optionally add "Format: json", "Format: csv" or "Format: both".';
   }
-  const { data, format, today: ref } = extract(raw, today);
+  const { data, format, today: ref } = extract(String(raw).slice(0, 100000), today);
+  const seen = new Set();
+  data.tasks = data.tasks.filter((t) => { const k = t.task + '|' + t.deadline; if (seen.has(k)) return false; seen.add(k); return true; });
+  let truncated = false;
+  for (const k of Object.keys(data)) if (data[k].length > 200) { data[k] = data[k].slice(0, 200); truncated = true; }
   const counts = {};
   let total = 0;
   for (const [k, v] of Object.entries(data)) { counts[k] = v.length; total += v.length; }
@@ -260,6 +282,7 @@ export function run(raw, today) {
     'Extraction is rule-based. Names and organisations are detected by pattern and can include false positives; check them.',
     'Relative dates (tomorrow, Friday, next week) are resolved against reference_date to the nearest upcoming day.',
   ];
+  if (truncated) notes.push('Very large input: each list was capped at 200 items.');
   if (!total) notes.push('Nothing structured was found. Include names, dates, amounts, emails, phone numbers or tasks.');
   const out = { meta: { agent: 'DataDistill', format, reference_date: ref, counts, notes }, ...data };
   const json = JSON.stringify(out, null, 2);
