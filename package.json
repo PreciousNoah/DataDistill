@@ -1,0 +1,10 @@
+{
+  "name": "datadistill",
+  "version": "1.0.0",
+  "description": "CROO provider agent that turns messy text into structured JSON or CSV",
+  "type": "module",
+  "main": "server.js",
+  "scripts": { "start": "node server.js", "test": "node test.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "@croo-network/sdk": "0.2.1" }
+}
