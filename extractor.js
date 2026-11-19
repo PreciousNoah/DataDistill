@@ -290,4 +290,4 @@ export function run(raw, today) {
   if (format === 'csv') return toCsv(data);
   if (format === 'both') return '[JSON]\n' + json + '\n\n[CSV]\n' + toCsv(data);
   return json;
-}
+                             }
