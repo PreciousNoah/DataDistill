@@ -8,6 +8,7 @@ export function norm(s) {
     .replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"')
     .replace(/[\u2013\u2014]/g, '-').replace(/\u2026/g, '...')
     .replace(/\u00a0/g, ' ').replace(/\r/g, '')
+    .replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'")
     .replace(/[^\x00-\x7F]/g, '');
 }
 
