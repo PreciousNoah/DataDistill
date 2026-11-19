@@ -1,73 +1,70 @@
 import assert from 'node:assert';
-import { run, extract, toCsv } from './extractor.js';
+import { generate, parseInput } from './generator.js';
 
-const sample = 'Hi team, Sarah Johnson from Acme Labs (sarah.j@acme.com, +234 803 123 4567) wants invoice INV-2041 for $1,250.50 paid by Nov 25. Dave will email the contract to https://acme.com/c by Friday - urgent! Call Mr. Okafor on 15/12/2026 at 3pm. Meeting moved to 10:30 tomorrow. Discount of 15% for 20 users.';
-const { data } = extract(sample, '2026-11-18');
-assert.deepEqual(data.emails, ['sarah.j@acme.com']);
-assert.deepEqual(data.phones, ['+2348031234567']);
-assert.deepEqual(data.urls, ['https://acme.com/c']);
-assert.deepEqual(data.references, ['INV-2041']);
-assert(data.amounts.some((a) => a.value === 1250.5 && a.currency === 'USD'));
-assert(data.dates.some((d) => d.iso === '2026-11-25'));
-assert(data.dates.some((d) => d.iso === '2026-12-15'));
-assert(data.dates.some((d) => d.iso === '2026-11-20'), 'Friday');
-assert(data.dates.some((d) => d.iso === '2026-11-19'), 'tomorrow');
-assert(data.times.some((t) => t.time === '15:00') && data.times.some((t) => t.time === '10:30'));
-assert.deepEqual(data.percentages, ['15%']);
-assert(data.quantities.some((q) => q.unit === 'users' && q.value === 20));
-assert(data.people.includes('Sarah Johnson') && data.people.includes('Okafor') && data.people.includes('Dave'));
-assert.deepEqual(data.organizations, ['Acme Labs']);
-const dave = data.tasks.find((t) => t.owner === 'Dave');
-assert(dave && dave.deadline === '2026-11-20' && dave.priority === 'high');
-assert(data.tasks.some((t) => /Okafor/.test(t.task) && t.deadline === '2026-12-15'));
+const full = `Name: API Debugger
+Does: Takes broken JSON or API error responses and returns a diagnosis and a corrected version. Built for developers.
+Input: broken JSON; an API error message
+Output: diagnosis; corrected JSON
+Price: $0.05
+Delivery: 30 min
+Limitations: Cannot fix semantic errors
+Tags: Development & Code`;
+const r = generate(full);
+assert(r.report.includes('LISTING PACK for: API Debugger'));
+assert.equal(r.form.price, '0.05');
+assert.equal(r.form.slaMin, 30);
+assert(r.tags.includes('Development & Code'));
+assert(/^[\x00-\x7F]*$/.test(r.report), 'ascii only');
 
-// formats
-assert(run(sample, '2026-11-18').startsWith('{'));
-assert(run('Format: csv ' + sample, '2026-11-18').startsWith('type,value'));
-assert(run(sample + ' Output: both', '2026-11-18').includes('[CSV]'));
-assert(JSON.parse(run(sample, '2026-11-18')).meta.counts.emails === 1);
+const bare = generate('A bot that summarises long crypto whale alerts into short daily emails for traders and explains each move clearly.');
+assert(bare.warnings.length > 0);
+assert(bare.report.includes('[9] CHECKLIST'));
 
-// flattened / list tasks / ambiguous date / currencies / unicode
-const t2 = extract('1. Call Sam about the quote 2. Email Priya the report by 3 Dec 3. Pay NGN 50,000 on 03/04/2026. Send \u20ac2k to Jos\u00e9 Alvarez', '2026-11-18').data;
-assert(t2.tasks.length >= 3);
-assert(t2.dates.some((d) => d.kind === 'ambiguous'));
-assert(t2.amounts.some((a) => a.currency === 'NGN' && a.value === 50000));
-assert(t2.amounts.some((a) => a.currency === 'EUR' && a.value === 2000));
-assert(t2.people.includes('Jose Alvarez'));
-assert(/^[\x00-\x7F]*$/.test(run('Caf\u00e9 meeting with Zo\u00eb Mart\u00edn \ud83d\ude80')));
+assert.equal(parseInput('').labelled, 0);
+assert(generate('').report.length > 0);
+const smart = generate('Name: Test \u201cBot\u201d \u2014 \ud83d\ude80\nDoes: does things for people who need things done quickly and well every day.');
+assert(/^[\x00-\x7F]*$/.test(smart.report));
+console.log('All tests passed');
 
-// empty / nothing found
-assert(run('').includes('empty order'));
-assert(JSON.parse(run('hello there')).meta.notes.some((n) => n.includes('Nothing structured')));
-assert(toCsv(data).includes('task,'));
-console.log('All DataDistill tests passed');
-
-const t3 = extract('Standup notes: Ada Lovelace to finish the API docs by next Monday. We spent 40 hours on it. Budget 5k USD. Meet at 9am.', '2026-11-18').data;
-const ada = t3.tasks.find((t) => /API docs/.test(t.task));
-assert(ada && ada.owner === 'Ada Lovelace' && ada.deadline === '2026-11-23', JSON.stringify(t3.tasks));
-assert(!t3.tasks.some((t) => /40 hours/.test(t.task)));
-assert(t3.amounts.some((a) => a.value === 5000));
-console.log('Task detection tests passed');
+// flattened input (buyer form removed line breaks)
+const flat = generate('Name: Midnight Muse Does: Turns a messy brain-dump of ideas into three punchy, ready-to-post social media captions with hooks, hashtags and a suggested posting time. Built for indie creators and small brands. Input: a rough idea or brain-dump; target platform; desired tone Output: three captions; hashtag set; best posting time; one hook line Price: 0.05 USDC Delivery: 20 min Limitations: English only; does not post on your behalf; no image generation Tags: Content & Creative Examples: - Launching a handmade candle shop, cozy autumn vibe, Instagram, playful tone - Our SaaS just hit 1000 users, LinkedIn, humble but excited');
+assert(flat.report.includes('LISTING PACK for: Midnight Muse\n'));
+assert.equal(flat.form.price, '0.05');
+assert.equal(flat.form.slaMin, 20);
+assert(flat.report.includes('1. Launching a handmade candle shop, cozy autumn vibe, Instagram, playful tone\n2. Our SaaS'));
+assert(flat.report.includes('- English only\n- does not post on your behalf'));
+assert(!flat.report.includes('missing'));
+console.log('Flattened-input tests passed');
 
 // ---- regression tests from stress run ----
-const T = '2026-11-19';
-const inv = extract('Bill to: Chidi Okeke, Okeke & Sons Ltd, 12 Allen Avenue. Contact accounts@okekesons.ng or 08031234567. Pay to bank 0123456789. Total 1.29m naira.', T).data;
-assert(!inv.people.includes('Allen Avenue') && !inv.people.includes('okekesons'), JSON.stringify(inv.people));
-assert.deepEqual(inv.organizations, ['Okeke & Sons Ltd']);
-assert.deepEqual(inv.phones, ['08031234567']);
-const chat = extract('lol ok so tmrw im meeting john at 5pm, need to buy 3 laptops (about 2500 usd each) and remind me to pay rent on the 1st', T).data;
-assert(chat.dates.some((d) => d.raw === 'tmrw' && d.iso === '2026-11-20'));
-assert(chat.dates.some((d) => d.iso === '2026-12-01'));
-assert(chat.tasks.length === 2, JSON.stringify(chat.tasks));
-const odd = extract('Version 1.2.3 released. Contact 192.168.1.10. Score 10.5/12. Call 911. Ref 2026. We may 5 times try.', T).data;
-assert.deepEqual(odd.phones, []);
-assert(!odd.dates.some((d) => /may/.test(d.raw)) && !odd.dates.some((d) => d.raw === '10.5/12'));
-assert(odd.tasks.some((t) => t.task === 'Call 911.'), JSON.stringify(odd.tasks));
-const em = extract('Please book the venue for Dec 12 and send the agenda to Tom Baker by end of week.', T).data;
-assert(em.tasks.length === 2 && em.tasks[0].deadline === '2026-12-12' && em.tasks[1].deadline === '2026-11-20', JSON.stringify(em.tasks));
-const nm = extract('Meeting with Prof. Ada Obi at Tesla Motors Inc. in New York. The Quick Brown Fox jumped.', T).data;
-assert.deepEqual(nm.people, ['Ada Obi'], JSON.stringify(nm.people));
-const big = JSON.parse(run('Call Sam. '.repeat(500), T));
-assert.equal(big.tasks.length, 1);
-assert(extract('Due 03-04-2026', T).data.dates[0].kind === 'ambiguous');
-console.log('Stress regression tests passed');
+const lf = generate('name: PriceWatch does: Tracks token prices and alerts you when a token moves more than 5% in an hour so traders never miss a pump. input: token symbol; threshold output: alert summary price: $0.10 delivery: 2 hours tags: DeFi & Trading');
+assert(lf.report.includes('LISTING PACK for: PriceWatch\n'));
+assert.equal(lf.form.price, '0.10');
+assert.equal(lf.form.slaHr, 2);
+assert(lf.tags.includes('DeFi & Trading'));
+
+const pr = generate('I built an agent that reads GitHub pull requests and writes a plain English changelog for each release. Buyers paste the PR list and get a changelog back in about 15 minutes for 0.50 USDC.');
+assert.equal(pr.form.price, '0.50');
+assert.equal(pr.form.slaMin, 15);
+assert(!pr.report.includes('0.\n') && !pr.report.includes('- 50 USDC.'));
+
+assert(generate('Meme Maker').report.includes('LISTING PACK for: Meme Maker\n'));
+
+const ng = generate('Name: RocketBot\nDoes: Takes goals and returns a roadmap with milestones and risks for founders every single time.\nPrice: \u20a6500');
+assert(ng.warnings.some((w) => /not in USDC/.test(w)));
+
+const nt = generate('Name: Doc Helper\nDoes: Explains legal documents. Note: not legal advice. Summarises clauses, flags unusual terms and lists obligations.');
+assert(nt.report.includes('- Not legal advice.'));
+assert(!/FEATURES[\s\S]*Note:[\s\S]*HOW TO USE/.test(nt.report));
+
+const ln = generate('Name: The Ultimate Super Duper Mega Automated Research and Analysis Assistant Bot\nDoes: Does research for you across many topics and returns a nicely organised brief with sources.');
+assert(ln.form.serviceName.length <= 40 && !/\s$/.test(ln.form.serviceName));
+assert(ln.warnings.some((w) => /name is long/.test(w)));
+
+assert(generate('Name: A\nName: B\nDoes: One thing done well for many people who need it done quickly today.').report.includes('LISTING PACK for: A\n'));
+console.log('AgentScribe stress regression tests passed');
+
+const tg = generate('name: PriceWatch does: Tracks token prices and alerts you when a token moves more than 5% in an hour so traders never miss a pump. input: token symbol output: alert summary price: $0.10 delivery: 2 hours tags: DeFi & Trading');
+assert.deepEqual(tg.tags, ['DeFi & Trading']);
+assert.deepEqual(generate('Name: X\nDoes: Tracks token prices for traders every hour with alerts.\nTags: defi &amp; trading, DeFi & Trading').tags, ['defi & trading']);
+console.log('Tag dedupe tests passed');
