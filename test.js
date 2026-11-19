@@ -48,3 +48,26 @@ assert(ada && ada.owner === 'Ada Lovelace' && ada.deadline === '2026-11-23', JSO
 assert(!t3.tasks.some((t) => /40 hours/.test(t.task)));
 assert(t3.amounts.some((a) => a.value === 5000));
 console.log('Task detection tests passed');
+
+// ---- regression tests from stress run ----
+const T = '2026-11-19';
+const inv = extract('Bill to: Chidi Okeke, Okeke & Sons Ltd, 12 Allen Avenue. Contact accounts@okekesons.ng or 08031234567. Pay to bank 0123456789. Total 1.29m naira.', T).data;
+assert(!inv.people.includes('Allen Avenue') && !inv.people.includes('okekesons'), JSON.stringify(inv.people));
+assert.deepEqual(inv.organizations, ['Okeke & Sons Ltd']);
+assert.deepEqual(inv.phones, ['08031234567']);
+const chat = extract('lol ok so tmrw im meeting john at 5pm, need to buy 3 laptops (about 2500 usd each) and remind me to pay rent on the 1st', T).data;
+assert(chat.dates.some((d) => d.raw === 'tmrw' && d.iso === '2026-11-20'));
+assert(chat.dates.some((d) => d.iso === '2026-12-01'));
+assert(chat.tasks.length === 2, JSON.stringify(chat.tasks));
+const odd = extract('Version 1.2.3 released. Contact 192.168.1.10. Score 10.5/12. Call 911. Ref 2026. We may 5 times try.', T).data;
+assert.deepEqual(odd.phones, []);
+assert(!odd.dates.some((d) => /may/.test(d.raw)) && !odd.dates.some((d) => d.raw === '10.5/12'));
+assert(odd.tasks.some((t) => t.task === 'Call 911.'), JSON.stringify(odd.tasks));
+const em = extract('Please book the venue for Dec 12 and send the agenda to Tom Baker by end of week.', T).data;
+assert(em.tasks.length === 2 && em.tasks[0].deadline === '2026-12-12' && em.tasks[1].deadline === '2026-11-20', JSON.stringify(em.tasks));
+const nm = extract('Meeting with Prof. Ada Obi at Tesla Motors Inc. in New York. The Quick Brown Fox jumped.', T).data;
+assert.deepEqual(nm.people, ['Ada Obi'], JSON.stringify(nm.people));
+const big = JSON.parse(run('Call Sam. '.repeat(500), T));
+assert.equal(big.tasks.length, 1);
+assert(extract('Due 03-04-2026', T).data.dates[0].kind === 'ambiguous');
+console.log('Stress regression tests passed');
